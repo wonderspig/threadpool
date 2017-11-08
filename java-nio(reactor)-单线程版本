@@ -1,0 +1,160 @@
+package reactor;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
+
+import java.util.Iterator;
+import java.util.Set;
+
+
+//java单线程版本
+
+class Reactor implements Runnable
+{
+	final Selector selector;
+	final ServerSocketChannel serverSocket;
+	public Reactor(int port) throws IOException{
+		 selector=Selector.open();
+		 serverSocket=ServerSocketChannel.open();
+		 serverSocket.socket().bind(new InetSocketAddress(port));
+		 serverSocket.configureBlocking(false);
+		 SelectionKey sKey=serverSocket.register(selector,SelectionKey.OP_ACCEPT );
+		 sKey.attach(new Acceptor());
+	}
+//	
+//	SelectorProvider p = SelectorProvider.provider();
+//	selector = p.openSelector();
+//	serverSocket = p.openServerSocketChannel();
+	@Override
+	public void run() {
+		try
+		{
+			while(!Thread.interrupted())
+			{
+				selector.select();
+				Set selected=selector.selectedKeys();
+				Iterator iterator=selected.iterator();
+				while(iterator.hasNext())
+				{
+					dispatch((SelectionKey)(iterator.next()));
+					selected.clear();
+				}
+			}
+		}
+		catch(IOException ex){}
+		
+	}
+	
+	void dispatch(SelectionKey k)
+	{
+		Runnable runnable=(Runnable)(k.attachment());
+		if(runnable!=null) 
+		{
+			 runnable.run();
+		}
+	}
+	//acceptor
+	class Acceptor implements Runnable
+	{
+
+		@Override
+		public void run() {
+			 try
+			 {
+				 SocketChannel channel=serverSocket.accept();
+				 if(channel!=null)
+				 {
+					 new Handler(selector,channel);
+				 }
+			 }catch(IOException ex){}
+			
+		}
+		
+	}
+	
+	//Handler
+	final class Handler implements Runnable
+	{
+		final SocketChannel socketChannel;
+		final SelectionKey sk;
+		java.nio.ByteBuffer input=java.nio.ByteBuffer.allocate(100);
+		java.nio.ByteBuffer output=java.nio.ByteBuffer.allocate(100);
+		
+		static final int READING=0,SENDING=1;
+		
+		int state=READING;
+		
+		public Handler(Selector selector,SocketChannel sChannel)throws IOException {
+			socketChannel=sChannel;
+			sk=socketChannel.register(selector, 0);
+			sk.attach(this);
+			sk.interestOps(SelectionKey.OP_READ);
+			selector.wakeup();
+			// TODO Auto-generated constructor stub
+		}
+		void read() throws IOException
+		{
+			socketChannel.read(input);
+			if(inputComplete())
+			{
+				process();
+				state=SENDING;
+				sk.interestOps(SelectionKey.OP_WRITE);
+			}
+		}
+		void write() throws IOException
+		{
+			socketChannel.write(output);
+			if(outputComplete())
+			{
+				sk.cancel();
+			}
+		}
+		@Override
+		public void run() {
+			// TODO Auto-generated method stub
+			if(state==READING){try {
+				read();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}}
+			else if(state==SENDING){try {
+				write();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}}
+			
+		}
+		void process()
+		{
+			
+		}
+		boolean inputComplete()
+		{
+			return true;
+		}
+		boolean outputComplete(){
+			return true;
+		}
+		 
+		
+	}
+}
+
+
+
+public class singlethread {
+
+	public static void main(String[] args) throws IOException {
+		// TODO Auto-generated method stub
+		new Reactor(12345).run();
+	}
+
+}
